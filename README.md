@@ -13,20 +13,23 @@ This pipeline processes scRNA-seq BAM files from 10x Genomics Multiome to genera
 ---
 
 ## Pipeline
-scRNA-seq BAM (per donor)
-↓
 
-PCR deduplication
-↓
-Donor-specific barcode prefixing
-↓
-Cell-type splitting (via metadata)
-↓
-Cross-donor merging (per cell type)
-↓
-StringTie transcript quantification
-↓
+```
+scRNA-seq BAM (per donor)
+        ↓
+1. PCR deduplication (-F 1024)
+        ↓
+2. Donor-specific barcode prefixing
+        ↓
+3. Cell-type splitting (via metadata)
+        ↓
+4. Cross-donor merging (per cell type)
+        ↓
+5. StringTie transcript quantification
+        ↓
 Cell-type resolved isoform expression matrix
+```
+
 ---
 
 ## Scripts
@@ -76,6 +79,8 @@ sbatch --dependency=afterok:$jid 2_merge_stringtie.sh
 ---
 
 ## Output
+
+```
 celltype_bams/
 ├── HSC.bam
 ├── HSC.stringtie.gtf
@@ -83,6 +88,7 @@ celltype_bams/
 ├── ProE.bam
 ├── ProE.stringtie.gtf
 └── ...
+```
 
 ---
 
@@ -94,5 +100,5 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Contact
 
-Wanying Xu · Sankaran Lab · Boston Children's Hospital  
+Wanying Xie · Sankaran Lab · Boston Children's Hospital  
 GitHub: [@WanyingX](https://github.com/WanyingX)
