@@ -100,5 +100,5 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Contact
 
-Wanying Xie · Sankaran Lab · Boston Children's Hospital  
+Wanying Xu · Sankaran Lab · Boston Children's Hospital  
 GitHub: [@WanyingX](https://github.com/WanyingX)
