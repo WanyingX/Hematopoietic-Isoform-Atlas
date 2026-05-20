@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hematopoietic Isoform Atlas</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&family=IBM+Plex+Sans:opsz,wght@6..26,300;6..26,400;6..26,500;6..26,600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --dim: #484f58;
+      --accent: #388bfd;
+      --accent-glow: rgba(56,139,253,0.18);
+      --font: 'IBM Plex Sans', sans-serif;
+      --mono: 'IBM Plex Mono', monospace;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; overflow: hidden; }
+
+    /* ── Loading ── */
+    #loading {
+      position: fixed; inset: 0; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 999; transition: opacity 0.5s ease;
+    }
+    #loading.out { opacity: 0; pointer-events: none; }
+
+    .load-logo {
+      font-size: 2.2rem; font-weight: 600; letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #60a5fa, #818cf8, #c084fc);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .load-sub { font-size: 0.8rem; color: var(--muted); font-family: var(--mono); margin-bottom: 36px; }
+
+    .progress-track {
+      width: 320px; height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%; border-radius: 2px;
+      background: linear-gradient(90deg, #388bfd, #818cf8);
+      transition: width 0.25s ease;
+      box-shadow: 0 0 12px rgba(56,139,253,0.5);
+    }
+    .load-status { font-size: 0.72rem; color: var(--dim); font-family: var(--mono); margin-top: 14px; letter-spacing: 0.03em; }
+
+    /* ── App Layout ── */
+    #app { display: none; grid-template-rows: 58px 1fr; height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 20px;
+      padding: 0 24px; border-bottom: 1px solid var(--border);
+      background: rgba(13,17,23,0.95); backdrop-filter: blur(8px);
+      position: relative; z-index: 10;
+    }
+
+    .logo {
+      font-size: 0.95rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap;
+      color: var(--text); flex-shrink: 0;
+    }
+    .logo span { color: var(--accent); }
+
+    .divider { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+
+    /* Search */
+    .search-wrap { position: relative; flex: 1; max-width: 380px; }
+    .search-input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 14px 8px 36px;
+      color: var(--text); font-family: var(--font); font-size: 0.88rem;
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .search-input::placeholder { color: var(--dim); }
+    .search-icon {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: var(--dim); pointer-events: none; font-size: 0.9rem;
+    }
+    .search-drop {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      max-height: 300px; overflow-y: auto; display: none; z-index: 50;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    }
+    .search-drop.open { display: block; }
+    .drop-item {
+      padding: 8px 14px; cursor: pointer; display: flex; align-items: center;
+      justify-content: space-between; transition: background 0.1s;
+    }
+    .drop-item:hover, .drop-item.active { background: var(--surface2); }
+    .drop-item:first-child { border-radius: 10px 10px 0 0; }
+    .drop-item:last-child { border-radius: 0 0 10px 10px; }
+    .drop-gene { font-weight: 500; font-size: 0.88rem; }
+    .drop-count { font-size: 0.72rem; font-family: var(--mono); color: var(--muted); }
+
+    /* Toggles */
+    .toggle-group { display: flex; gap: 3px; margin-left: auto; }
+    .tgl {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-size: 0.78rem;
+      cursor: pointer; font-family: var(--font); transition: all 0.15s; white-space: nowrap;
+    }
+    .tgl:hover { color: var(--text); }
+    .tgl.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; align-self: center; }
+
+    /* ── Body ── */
+    .body { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 16px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+    }
+    .sidebar-label {
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--dim); padding: 0 4px;
+    }
+    .tx-list { display: flex; flex-direction: column; gap: 2px; }
+    .tx-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      border-radius: 6px; cursor: pointer; transition: background 0.1s;
+    }
+    .tx-item:hover { background: var(--surface2); }
+    .tx-item.muted { opacity: 0.3; }
+    .tx-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .tx-id { font-size: 0.72rem; font-family: var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .lineage-legend { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+    .lin-item { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; color: var(--muted); }
+    .lin-pip { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+    .empty-hint {
+      color: var(--dim); font-size: 0.78rem; text-align: center; padding: 24px 8px;
+      line-height: 1.7; font-family: var(--mono);
+    }
+
+    /* ── Chart area ── */
+    .chart-area { display: flex; flex-direction: column; padding: 20px 24px; min-height: 0; overflow: hidden; }
+    .chart-header { margin-bottom: 12px; }
+    .gene-name-big { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+    .gene-id-small { font-size: 0.75rem; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
+    .placeholder-box {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; color: var(--dim); font-size: 0.85rem;
+    }
+    .placeholder-hex { font-size: 3rem; opacity: 0.15; line-height: 1; }
+
+    #plot { flex: 1; min-height: 0; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="load-logo">Isoform Atlas</div>
+  <div class="load-sub">Hematopoietic · SC Multiomics · Transcript-level</div>
+  <div class="progress-track"><div class="progress-fill" id="prog"></div></div>
+  <div class="load-status" id="load-msg">Initializing…</div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <div class="logo">Hematopoietic <span>Isoform</span> Atlas</div>
+    <div class="divider"></div>
+
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" class="search-input" id="gene-search"
+             placeholder="Search gene  (e.g. GATA1, HBB, MYC…)" autocomplete="off">
+      <div class="search-drop" id="drop"></div>
+    </div>
+
+    <div class="toggle-group">
+      <button class="tgl on" id="btn-tpm"      onclick="setView('tpm')">TPM</button>
+      <button class="tgl"    id="btn-frac"     onclick="setView('fraction')">Isoform %</button>
+      <div class="sep"></div>
+      <button class="tgl on" id="btn-linear"   onclick="setScale('linear')">Linear</button>
+      <button class="tgl"    id="btn-log"      onclick="setScale('log')">Log</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-label">Transcripts</div>
+      <div class="tx-list" id="tx-list">
+        <div class="empty-hint">Search for a gene<br>to view its isoforms</div>
+      </div>
+      <div style="margin-top:auto; padding-top:16px; border-top:1px solid var(--border)">
+        <div class="sidebar-label" style="margin-bottom:10px">Cell lineage</div>
+        <div class="lineage-legend" id="lin-legend"></div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-area">
+      <div class="chart-header" id="chart-hdr" style="display:none">
+        <div class="gene-name-big" id="gene-lbl"></div>
+        <div class="gene-id-small" id="gene-eid"></div>
+      </div>
+      <div class="placeholder-box" id="placeholder">
+        <div class="placeholder-hex">⬡</div>
+        <div>Select a gene to visualize isoform expression</div>
+        <div style="font-size:0.72rem; font-family: var(--mono)">36 cell types · hematopoietic hierarchy</div>
+      </div>
+      <div id="plot" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const DATA_URL = 'https://raw.githubusercontent.com/WanyingX/Hematopoietic-Isoform-Atlas/refs/heads/Arts-in-graph/results/SC_Multiomics_Isoform.TPM.tsv';
+
+// Biological ordering of cell types through hematopoiesis
+const CELL_ORDER = [
+  // Stem & multipotent
+  'HSC','MPP_MkEry','MPP_MyLy','LMPP','MLP','MDP','CLP',
+  // Myeloid
+  'Early_GMP','GMP','EoBasoP','ProMono','CD14Mono','CD16Mono','cDC','pDC',
+  // Erythroid / Megakaryocyte
+  'MEP','BFU_E','CFU_E','ProE','BasoE','OrthoE','PolyE','MKP','CyclingP',
+  // B lymphoid
+  'PreProB','Cycling_ProB','ImmatureB','Large_PreB','Small_PreB','VDJ_ProB','MatureB','Plasma',
+  // T / NK
+  'CD4T','CD8T','NK',
+  // Other
+  'Stromal'
+];
+
+const LINEAGES = [
+  { key:'stem',      label:'Stem / Progenitor',  color:'#818cf8', cells:['HSC','MPP_MkEry','MPP_MyLy','LMPP','MLP','MDP','CLP'] },
+  { key:'myeloid',   label:'Myeloid',             color:'#fb923c', cells:['Early_GMP','GMP','EoBasoP','ProMono','CD14Mono','CD16Mono','cDC','pDC'] },
+  { key:'ery',       label:'Erythroid / Meg',     color:'#f472b6', cells:['MEP','BFU_E','CFU_E','ProE','BasoE','OrthoE','PolyE','MKP','CyclingP'] },
+  { key:'blymph',    label:'B lymphoid',          color:'#38bdf8', cells:['PreProB','Cycling_ProB','ImmatureB','Large_PreB','Small_PreB','VDJ_ProB','MatureB','Plasma'] },
+  { key:'tnk',       label:'T / NK',              color:'#4ade80', cells:['CD4T','CD8T','NK'] },
+  { key:'stromal',   label:'Stromal',             color:'#94a3b8', cells:['Stromal'] },
+];
+
+// 20-color palette for transcripts
+const TX_COLORS = [
+  '#60a5fa','#34d399','#f87171','#fbbf24','#a78bfa',
+  '#f472b6','#22d3ee','#86efac','#fb923c','#e879f9',
+  '#2dd4bf','#818cf8','#facc15','#ff8fa3','#bef264',
+  '#c084fc','#7dd3fc','#6ee7b7','#fca5a5','#fde68a'
+];
+
+// ── State ─────────────────────────────────────────────────────────────────
+let geneIndex = new Map();   // gene → [rows]
+let activeCells = [];        // columns present in data, in CELL_ORDER
+let currentGene = null;
+let view  = 'tpm';           // 'tpm' | 'fraction'
+let scale = 'linear';        // 'linear' | 'log'
+let hidden = new Set();      // hidden transcript IDs
+
+// ── Build lineage legend ──────────────────────────────────────────────────
+const linLegend = document.getElementById('lin-legend');
+LINEAGES.forEach(lin => {
+  const el = document.createElement('div');
+  el.className = 'lin-item';
+  el.innerHTML = `<div class="lin-pip" style="background:${lin.color}"></div><span>${lin.label}</span>`;
+  linLegend.appendChild(el);
+});
+
+// ── Data loading ─────────────────────────────────────────────────────────
+async function loadData() {
+  const prog = document.getElementById('prog');
+  const msg  = document.getElementById('load-msg');
+
+  try {
+    msg.textContent = 'Fetching expression matrix from GitHub…';
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const total = +res.headers.get('Content-Length') || 0;
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      const pct = total ? Math.min(85, received / total * 85) : Math.min(60, received / 1e6 * 5);
+      prog.style.width = pct + '%';
+    }
+
+    msg.textContent = 'Parsing TSV…';
+    prog.style.width = '88%';
+    await tick();
+
+    const text = await new Blob(chunks).text();
+    const { data, meta } = Papa.parse(text, {
+      header: true, delimiter: '\t', skipEmptyLines: true, dynamicTyping: true
+    });
+
+    msg.textContent = 'Building gene index…';
+    prog.style.width = '94%';
+    await tick();
+
+    activeCells = CELL_ORDER.filter(c => meta.fields.includes(c));
+
+    for (const row of data) {
+      const g = row.ref_gene_name;
+      if (!g) continue;
+      if (!geneIndex.has(g)) geneIndex.set(g, []);
+      geneIndex.get(g).push(row);
+    }
+
+    prog.style.width = '100%';
+    msg.textContent = `✓  ${geneIndex.size.toLocaleString()} genes · ${data.length.toLocaleString()} transcripts loaded`;
+    await tick(400);
+
+    // Show app
+    const loading = document.getElementById('loading');
+    loading.classList.add('out');
+    setTimeout(() => loading.style.display = 'none', 500);
+    const app = document.getElementById('app');
+    app.style.display = 'grid';
+
+  } catch(e) {
+    msg.textContent = '⚠ ' + e.message;
+    console.error(e);
+  }
+}
+
+function tick(ms = 10) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Search ──────────────────────────────────────────────────────────────
+const searchEl = document.getElementById('gene-search');
+const dropEl   = document.getElementById('drop');
+
+let searchTimer;
+searchEl.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(updateSearch, 120);
+});
+
+searchEl.addEventListener('keydown', e => {
+  const items = [...dropEl.querySelectorAll('.drop-item')];
+  const cur = items.findIndex(i => i.classList.contains('active'));
+  if (e.key === 'ArrowDown') { e.preventDefault(); activate(items, Math.min(cur+1, items.length-1)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); activate(items, Math.max(cur-1, 0)); }
+  else if (e.key === 'Enter' && cur >= 0) { items[cur].click(); }
+  else if (e.key === 'Escape') { dropEl.classList.remove('open'); }
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) dropEl.classList.remove('open');
+});
+
+function activate(items, idx) {
+  items.forEach(i => i.classList.remove('active'));
+  if (items[idx]) items[idx].classList.add('active');
+}
+
+function updateSearch() {
+  const q = searchEl.value.trim().toUpperCase();
+  if (!q) { dropEl.classList.remove('open'); return; }
+
+  const starts = [], contains = [];
+  for (const [g, rows] of geneIndex) {
+    const gu = g.toUpperCase();
+    if (gu.startsWith(q)) starts.push({ g, n: rows.length });
+    else if (gu.includes(q)) contains.push({ g, n: rows.length });
+    if (starts.length + contains.length >= 80) break;
+  }
+  const matches = [...starts, ...contains].slice(0, 50);
+
+  dropEl.innerHTML = matches.map(({ g, n }) =>
+    `<div class="drop-item" data-gene="${encodeURIComponent(g)}">
+       <span class="drop-gene">${g}</span>
+       <span class="drop-count">${n} tx</span>
+     </div>`
+  ).join('');
+
+  dropEl.querySelectorAll('.drop-item').forEach(el => {
+    el.addEventListener('click', () => selectGene(decodeURIComponent(el.dataset.gene)));
+  });
+
+  dropEl.classList.toggle('open', matches.length > 0);
+}
+
+// ── Gene selection ───────────────────────────────────────────────────────
+function selectGene(gene) {
+  currentGene = gene;
+  hidden.clear();
+  searchEl.value = gene;
+  dropEl.classList.remove('open');
+  renderAll();
+}
+
+function renderAll() {
+  if (!currentGene) return;
+  const rows = geneIndex.get(currentGene);
+
+  // Header
+  document.getElementById('chart-hdr').style.display = 'block';
+  document.getElementById('gene-lbl').textContent = currentGene;
+  document.getElementById('gene-eid').textContent = rows[0].ref_gene_id + '  ·  ' + rows.length + ' transcript' + (rows.length !== 1 ? 's' : '');
+
+  // Sidebar tx list
+  const listEl = document.getElementById('tx-list');
+  listEl.innerHTML = rows.map((row, i) => {
+    const color = TX_COLORS[i % TX_COLORS.length];
+    const tid = row.reference_id;
+    return `<div class="tx-item ${hidden.has(tid) ? 'muted' : ''}" data-tid="${encodeURIComponent(tid)}" title="${tid}">
+      <div class="tx-dot" style="background:${color}"></div>
+      <div class="tx-id">${tid}</div>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('.tx-item').forEach(el => {
+    el.addEventListener('click', () => toggleTx(decodeURIComponent(el.dataset.tid)));
+  });
+
+  renderPlot();
+}
+
+function toggleTx(tid) {
+  if (hidden.has(tid)) hidden.delete(tid); else hidden.add(tid);
+  renderAll();
+}
+
+// ── View / Scale toggles ─────────────────────────────────────────────────
+function setView(v) {
+  view = v;
+  document.getElementById('btn-tpm').classList.toggle('on', v === 'tpm');
+  document.getElementById('btn-frac').classList.toggle('on', v === 'fraction');
+  // log scale not meaningful for fraction
+  if (v === 'fraction') {
+    scale = 'linear';
+    document.getElementById('btn-linear').classList.add('on');
+    document.getElementById('btn-log').classList.remove('on');
+  }
+  if (currentGene) renderPlot();
+}
+
+function setScale(s) {
+  if (view === 'fraction') return; // disable log for fraction
+  scale = s;
+  document.getElementById('btn-linear').classList.toggle('on', s === 'linear');
+  document.getElementById('btn-log').classList.toggle('on', s === 'log');
+  if (currentGene) renderPlot();
+}
+
+// ── Plot ─────────────────────────────────────────────────────────────────
+function renderPlot() {
+  const allRows = geneIndex.get(currentGene);
+  const rows = allRows.filter(r => !hidden.has(r.reference_id));
+
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('plot').style.display = 'block';
+
+  const cells = activeCells;
+  let traces = [];
+
+  if (view === 'tpm') {
+    // Line + marker per transcript
+    traces = allRows.map((row, i) => {
+      const color = TX_COLORS[i % TX_COLORS.length];
+      const vis   = hidden.has(row.reference_id) ? 'legendonly' : true;
+      return {
+        type: 'scatter', mode: 'lines+markers',
+        name: row.reference_id,
+        x: cells,
+        y: cells.map(c => Math.max(0, row[c] ?? 0)),
+        line:   { color, width: 2 },
+        marker: { color, size: 5, symbol: 'circle' },
+        visible: vis,
+        hovertemplate: `<b>${row.reference_id}</b><br>%{x}: %{y:.3f} TPM<extra></extra>`,
+      };
+    });
+
+  } else {
+    // Stacked bar: isoform fraction
+    const totals = cells.map(c =>
+      allRows.reduce((s, r) => s + Math.max(0, r[c] ?? 0), 0)
+    );
+    traces = allRows.map((row, i) => {
+      const color = TX_COLORS[i % TX_COLORS.length];
+      const vis   = hidden.has(row.reference_id) ? 'legendonly' : true;
+      return {
+        type: 'bar',
+        name: row.reference_id,
+        x: cells,
+        y: cells.map((c, ci) => totals[ci] > 0 ? ((row[c] ?? 0) / totals[ci] * 100) : 0),
+        marker: { color },
+        visible: vis,
+        hovertemplate: `<b>${row.reference_id}</b><br>%{x}: %{y:.1f}%<extra></extra>`,
+      };
+    });
+  }
+
+  // Build lineage band shapes (colored rectangles under x-axis)
+  const shapes = [];
+  const annotations = [];
+  LINEAGES.forEach(lin => {
+    const present = lin.cells.filter(c => cells.includes(c));
+    if (!present.length) return;
+    const x0 = cells.indexOf(present[0]);
+    const x1 = cells.indexOf(present[present.length - 1]);
+    if (x0 < 0) return;
+
+    shapes.push({
+      type: 'rect', xref: 'x', yref: 'paper',
+      x0: x0 - 0.48, x1: x1 + 0.48, y0: -0.001, y1: 0,
+      fillcolor: lin.color, line: { width: 0 }, layer: 'above',
+      opacity: 0.85,
+    });
+  });
+
+  const layout = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: '#161b22',
+    font: { family: 'IBM Plex Mono, monospace', color: '#8b949e', size: 11 },
+    margin: { t: 12, r: 140, b: 110, l: 64 },
+    barmode: view === 'fraction' ? 'stack' : undefined,
+    xaxis: {
+      tickangle: -50,
+      gridcolor: '#21262d',
+      linecolor: '#30363d',
+      tickfont: { size: 10, family: 'IBM Plex Mono, monospace' },
+      tickvals: cells,
+      ticktext: cells,
+      fixedrange: false,
+    },
+    yaxis: {
+      title: { text: view === 'tpm' ? 'Expression (TPM)' : 'Isoform Fraction (%)', font: { size: 11 } },
+      gridcolor: '#21262d',
+      linecolor: '#30363d',
+      rangemode: 'tozero',
+      type: (view === 'tpm' && scale === 'log') ? 'log' : 'linear',
+    },
+    legend: {
+      font: { size: 9, family: 'IBM Plex Mono, monospace', color: '#8b949e' },
+      bgcolor: 'transparent',
+      x: 1.01, y: 1, xanchor: 'left',
+    },
+    shapes,
+    hovermode: 'closest',
+    dragmode: 'zoom',
+  };
+
+  const config = {
+    responsive: true,
+    displayModeBar: true,
+    modeBarButtonsToRemove: ['autoScale2d','lasso2d','select2d','toImage'],
+    modeBarButtonsToAdd: [{
+      name: 'Download SVG',
+      icon: Plotly.Icons.camera,
+      click: gd => Plotly.downloadImage(gd, { format: 'svg', filename: currentGene + '_isoforms' })
+    }],
+  };
+
+  Plotly.react('plot', traces, layout, config);
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
