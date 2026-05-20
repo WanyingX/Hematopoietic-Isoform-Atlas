@@ -10,7 +10,10 @@ Cell-type resolved transcript quantification across 36 hematopoietic cell types 
 
 This pipeline processes scRNA-seq BAM files from 10x Genomics Multiome to generate cell-type-specific transcript expression profiles. Reads are assigned to individual cell types using single-cell metadata, merged across donors, and quantified using StringTie.
 
+**Live demo:** `https://WanyingX.github.io/Hematopoietic-Isoform-Atlas/`
+
 ---
+
 
 ## Pipeline
 
